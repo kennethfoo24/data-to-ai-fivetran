@@ -114,3 +114,44 @@ with open(f"{DATA_DIR}/orders.csv", "w", newline="") as f:
         ])
 print("orders.csv ✓")
 print("Seed data generation complete.")
+
+# ── Finance Invoices (2,000) ──────────────────────────────────────────────────
+INVOICE_STATUSES = ["paid", "paid", "paid", "unpaid", "overdue"]
+
+with open(f"{DATA_DIR}/finance_invoices.csv", "w", newline="") as f:
+    w = csv.writer(f)
+    w.writerow(["invoice_id", "customer_id", "amount", "status", "issue_date", "due_date"])
+    for iid in range(1, 2001):
+        issue = date.fromisoformat(random_date(date(2023, 1, 1), date(2024, 10, 31)))
+        due   = issue + timedelta(days=random.choice([30, 45, 60]))
+        status = random.choice(INVOICE_STATUSES)
+        # Force overdue if due date is in the past
+        if status == "unpaid" and due < date(2024, 12, 1):
+            status = "overdue"
+        w.writerow([
+            iid,
+            random.randint(1, 2000),
+            round(random.uniform(50, 5000), 2),
+            status,
+            issue.isoformat(),
+            due.isoformat(),
+        ])
+print("finance_invoices.csv ✓")
+
+# ── Finance Payments (1,800) ──────────────────────────────────────────────────
+METHODS = ["card", "card", "card", "bank", "paypal"]
+
+with open(f"{DATA_DIR}/finance_payments.csv", "w", newline="") as f:
+    w = csv.writer(f)
+    w.writerow(["payment_id", "invoice_id", "amount_paid", "payment_date", "method"])
+    paid_invoices = random.sample(range(1, 2001), 1800)
+    for pid, iid in enumerate(paid_invoices, start=1):
+        w.writerow([
+            pid,
+            iid,
+            round(random.uniform(50, 5000), 2),
+            random_date(date(2023, 2, 1), date(2025, 1, 31)),
+            random.choice(METHODS),
+        ])
+print("finance_payments.csv ✓")
+print("Finance seed data generation complete.")
