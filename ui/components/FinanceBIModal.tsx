@@ -119,7 +119,7 @@ export default function FinanceBIModal({ onClose }: Props) {
               <LineChart data={data.mrr_trend} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
                 <XAxis dataKey="month" tick={{ fontSize: 10, fontFamily: 'var(--font-mono, monospace)' }} />
                 <YAxis tick={{ fontSize: 10 }} tickFormatter={v => `$${(v/1000).toFixed(0)}k`} />
-                <Tooltip formatter={(v: number) => [`$${v.toLocaleString()}`, 'Revenue']} />
+                <Tooltip formatter={(v) => [`$${Number(v).toLocaleString()}`, 'Revenue']} />
                 <Line type="monotone" dataKey="revenue" stroke={P.indigo} strokeWidth={2} dot={false} />
               </LineChart>
             </ResponsiveContainer>
@@ -129,10 +129,10 @@ export default function FinanceBIModal({ onClose }: Props) {
             <ResponsiveContainer width="100%" height={280}>
               <PieChart>
                 <Pie data={data.payment_methods} dataKey="revenue" nameKey="method" cx="50%" cy="50%" outerRadius={100} innerRadius={50}
-                  label={({ method, percent }: { method: string; percent: number }) => `${method} ${(percent * 100).toFixed(0)}%`}>
+                  label={({ name, percent }: { name?: string; percent?: number }) => name && percent != null ? `${name} ${(percent * 100).toFixed(0)}%` : ''}>
                   {data.payment_methods.map((_, i) => <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />)}
                 </Pie>
-                <Tooltip formatter={(v: number) => [`$${v.toLocaleString()}`, 'Revenue']} />
+                <Tooltip formatter={(v) => [`$${Number(v).toLocaleString()}`, 'Revenue']} />
                 <Legend />
               </PieChart>
             </ResponsiveContainer>
