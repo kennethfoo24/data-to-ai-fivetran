@@ -18,6 +18,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from routers.churn import router as churn_router
 from routers.recommend import router as recommend_router
 from routers.catalog import router as catalog_router
+from routers.finance import router as finance_router
 
 MLFLOW_URI = os.getenv("MLFLOW_TRACKING_URI", "http://mlflow:5000")
 DATABASE_URL = os.getenv("DATABASE_URL", "")
@@ -34,6 +35,7 @@ app.add_middleware(
 app.include_router(churn_router)
 app.include_router(recommend_router)
 app.include_router(catalog_router)
+app.include_router(finance_router)
 
 
 @app.get("/health")
