@@ -10,8 +10,9 @@ endif
 up:
 	docker compose --profile core up -d
 
-## Stop all services
+## Stop services and reset demo state (finance tables + kafka + ngrok)
 down:
+	bash scripts/teardown.sh
 	docker compose --profile core down
 
 ## Generate and load seed data
