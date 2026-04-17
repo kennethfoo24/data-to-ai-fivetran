@@ -77,7 +77,99 @@ echo ""
 echo "→ Loading seed data..."
 bash seed/seed.sh
 
-# 8. Done
+# 8. Produce Kafka finance events
+echo ""
+echo "→ Producing Kafka finance events..."
+python3 seed/produce_finance_events.py && echo "✓ Finance events published." || echo "  (skipped — Kafka not reachable)"
+
+# 9. ngrok tunnels (optional — for Fivetran demo)
+echo ""
+[ -f .env ] && export $(grep -v '^#' .env | xargs) 2>/dev/null || true
+if ! command -v ngrok &> /dev/null; then
+  echo "  (skipped) ngrok not found. Install to auto-expose for Fivetran:"
+  echo "    Mac:   brew install ngrok/ngrok/ngrok"
+  echo "    Linux: snap install ngrok"
+  echo "  Then add NGROK_AUTHTOKEN=<token> to .env and re-run make setup."
+elif [ -z "${NGROK_AUTHTOKEN:-}" ]; then
+  echo "  (skipped) NGROK_AUTHTOKEN not set in .env"
+  echo "  Get a free token at https://dashboard.ngrok.com/get-started/your-authtoken"
+else
+  ngrok config add-authtoken "$NGROK_AUTHTOKEN" --log=false 2>/dev/null || true
+  pkill -f ngrok 2>/dev/null || true
+  sleep 1
+
+  cat > /tmp/ngrok-shopstream.yml << NGROK_EOF
+version: "2"
+authtoken: ${NGROK_AUTHTOKEN}
+tunnels:
+  postgres:
+    proto: tcp
+    addr: 5432
+  kafka:
+    proto: tcp
+    addr: 9092
+NGROK_EOF
+
+  ngrok start --all --config /tmp/ngrok-shopstream.yml --log /tmp/ngrok.log &
+  sleep 4
+
+  TUNNELS_JSON=$(curl -sf http://localhost:4040/api/tunnels 2>/dev/null || echo '{}')
+  PG_URL=$(echo "$TUNNELS_JSON" | python3 -c "
+import sys, json
+tunnels = json.load(sys.stdin).get('tunnels', [])
+for t in tunnels:
+    if '5432' in t.get('config', {}).get('addr', ''):
+        addr = t['public_url'].replace('tcp://', '')
+        host, port = addr.rsplit(':', 1)
+        print(f'{host} {port}')
+        break
+" 2>/dev/null || echo "")
+  KAFKA_URL=$(echo "$TUNNELS_JSON" | python3 -c "
+import sys, json
+tunnels = json.load(sys.stdin).get('tunnels', [])
+for t in tunnels:
+    if '9092' in t.get('config', {}).get('addr', ''):
+        print(t['public_url'].replace('tcp://', ''))
+        break
+" 2>/dev/null || echo "")
+
+  PG_HOST=$(echo "$PG_URL" | cut -d' ' -f1)
+  PG_PORT=$(echo "$PG_URL" | cut -d' ' -f2)
+
+  if [ -n "$PG_HOST" ]; then
+    echo ""
+    echo "╔══════════════════════════════════════════════════════════════════════╗"
+    echo "║   Fivetran Finance — Connection Details (copy-paste these)           ║"
+    echo "╠══════════════════════════════════════════════════════════════════════╣"
+    echo "║                                                                      ║"
+    echo "║   POSTGRES SOURCE CONNECTOR                                          ║"
+    printf "║   Host:      %-55s║\n" "$PG_HOST"
+    printf "║   Port:      %-55s║\n" "$PG_PORT"
+    echo "║   Database:  shopstream                                              ║"
+    echo "║   User:      admin                                                   ║"
+    echo "║   Password:  admin                                                   ║"
+    echo "║   Tables:    finance_invoices, finance_payments, customers           ║"
+    echo "║                                                                      ║"
+    echo "║   KAFKA SOURCE CONNECTOR                                             ║"
+    printf "║   Bootstrap: %-55s║\n" "$KAFKA_URL"
+    echo "║   Topic:     shopstream.finance                                      ║"
+    echo "║   Protocol:  PLAINTEXT                                               ║"
+    echo "║                                                                      ║"
+    echo "║   HUBSPOT REVERSE ETL — FIELD MAPPINGS                               ║"
+    echo "║   Source:    SHOPSTREAM.transformed.customer_segments                ║"
+    echo "║   Unique ID: customer_id → Contact External ID                       ║"
+    echo "║   segment      → revenue_segment (custom property)                   ║"
+    echo "║   total_paid   → total_revenue   (custom property)                   ║"
+    echo "║                                                                      ║"
+    echo "║   Fivetran:  https://fivetran.com/dashboard                          ║"
+    printf "║   HubSpot:   https://app.hubspot.com/contacts/%-24s║\n" "${HUBSPOT_PORTAL_ID:-<your-portal-id>}"
+    echo "╚══════════════════════════════════════════════════════════════════════╝"
+  else
+    echo "  ⚠ ngrok started but could not read tunnel URLs — check http://localhost:4040"
+  fi
+fi
+
+# 10. Done
 echo ""
 echo "╔══════════════════════════════════════════════════════════════╗"
 echo "║   DataFabric is running!                                     ║"
