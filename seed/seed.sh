@@ -25,6 +25,33 @@ docker compose exec postgres psql -U "$PGUSER" -d "$PGDB" -c "
   INSERT INTO inventory(product_id, stock_qty) SELECT product_id, stock_qty FROM products_import;
 "
 
+echo "==> [2b/4] Creating + loading finance tables..."
+docker compose exec postgres psql -U "$PGUSER" -d "$PGDB" -c "
+  CREATE TABLE IF NOT EXISTS finance_invoices (
+    invoice_id  SERIAL PRIMARY KEY,
+    customer_id INT,
+    amount      NUMERIC(10,2),
+    status      VARCHAR(20),
+    issue_date  DATE,
+    due_date    DATE
+  );
+  CREATE TABLE IF NOT EXISTS finance_payments (
+    payment_id   SERIAL PRIMARY KEY,
+    invoice_id   INT,
+    amount_paid  NUMERIC(10,2),
+    payment_date DATE,
+    method       VARCHAR(20)
+  );
+"
+docker compose exec postgres psql -U "$PGUSER" -d "$PGDB" \
+  -c "TRUNCATE finance_payments, finance_invoices RESTART IDENTITY CASCADE;"
+docker compose exec postgres psql -U "$PGUSER" -d "$PGDB" \
+  -c "COPY finance_invoices(invoice_id,customer_id,amount,status,issue_date,due_date) FROM '/seed/finance_invoices.csv' CSV HEADER"
+docker compose exec postgres psql -U "$PGUSER" -d "$PGDB" \
+  -c "COPY finance_payments(payment_id,invoice_id,amount_paid,payment_date,method) FROM '/seed/finance_payments.csv' CSV HEADER"
+docker compose exec postgres psql -U "$PGUSER" -d "$PGDB" \
+  -c "SELECT 'finance_invoices' AS tbl, COUNT(*) FROM finance_invoices UNION ALL SELECT 'finance_payments', COUNT(*) FROM finance_payments;"
+
 echo "==> [3/4] Waiting for Airflow to be ready..."
 until curl -s http://localhost:8082/health | grep -q "healthy"; do
   echo "   Airflow not ready yet, retrying in 5s..."
