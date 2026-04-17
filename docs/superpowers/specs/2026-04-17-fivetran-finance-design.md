@@ -260,22 +260,26 @@ New logos needed in `FinanceGraph.tsx`:
 
 ---
 
-## 8. ngrok Auto-Exposure (make setup integration)
+## 8. ngrok Auto-Exposure + Kafka Events (make setup integration)
 
-`make setup` (via `scripts/setup.sh`) automatically starts ngrok tunnels for Postgres and Kafka after services are healthy, then prints a formatted copy-paste block for Fivetran and HubSpot.
+`make setup` (via `scripts/setup.sh`) automatically:
+1. Starts ngrok tunnels for Postgres and Kafka after services are healthy
+2. Produces Kafka finance events (no separate manual step needed)
+3. Prints a formatted copy-paste block for Fivetran and HubSpot
 
 ### What gets added to `scripts/setup.sh`
 
 After the existing "Load seed data" step, the script:
 
-1. **Checks for ngrok** — if `ngrok` not found, prints install instructions and skips (non-fatal)
-2. **Checks for `NGROK_AUTHTOKEN`** in `.env` — if missing, prints signup instructions and skips
-3. **Starts two ngrok TCP tunnels in the background:**
+1. **Produces Kafka finance events** — runs `python3 seed/produce_finance_events.py` inline (500 events to `shopstream.finance`)
+2. **Checks for ngrok** — if `ngrok` not found, prints install instructions and skips (non-fatal)
+3. **Checks for `NGROK_AUTHTOKEN`** in `.env` — if missing, prints signup instructions and skips
+4. **Starts two ngrok TCP tunnels in the background:**
    - `ngrok tcp 5432` → exposes Postgres
    - `ngrok tcp 9092` → exposes Kafka
-4. **Waits 3 seconds** for ngrok to assign public URLs
-5. **Queries ngrok local API** (`http://localhost:4040/api/tunnels`) to extract the assigned hostnames and ports
-6. **Prints the Fivetran copy-paste block:**
+5. **Waits 3 seconds** for ngrok to assign public URLs
+6. **Queries ngrok local API** (`http://localhost:4040/api/tunnels`) to extract the assigned hostnames and ports
+7. **Prints the Fivetran copy-paste block:**
 
 ```
 ╔══════════════════════════════════════════════════════════════════════╗
@@ -323,6 +327,37 @@ NGROK_AUTHTOKEN=   # get free token at https://dashboard.ngrok.com/get-started/y
 - `make setup` still completes successfully — ngrok is optional
 - The Fivetran connection block is skipped
 - A single line prints: `  (skipped) ngrok not configured — see docs/fivetran-finance-setup.md for manual steps`
+
+---
+
+## 8b. make down — Demo Reset
+
+`make down` is extended to also reset the demo state so re-running `make setup` always starts from a clean slate. This is the natural mental model: down = everything torn down, ready to go again.
+
+### What gets added to `Makefile` `down` target
+
+The `down` target calls `scripts/teardown.sh` (new file) before stopping Docker, which:
+
+1. **Kills ngrok tunnels** — `pkill -f ngrok` (graceful, non-fatal if not running)
+2. **Truncates finance tables in Postgres** — via `docker compose exec postgres psql`:
+   ```sql
+   TRUNCATE finance_payments, finance_invoices RESTART IDENTITY CASCADE;
+   ```
+3. **Resets Kafka topic** — deletes and recreates `shopstream.finance` topic via Kafka CLI inside the kafka container (auto-create is enabled so recreation is instant)
+4. **Stops Docker services** — existing `docker compose --profile core down` (unchanged)
+
+### Behaviour
+- Idempotent — safe to run even if services are already stopped (each step is non-fatal)
+- Does **not** delete volumes or seed CSVs (use `make clean` for that, unchanged)
+- After `make down` + `make setup`: fresh seed data, fresh Kafka events, fresh ngrok URLs — new copy-paste block printed
+
+### Updated `Makefile` targets
+```makefile
+## Stop services and reset demo state (finance tables + kafka + ngrok)
+down:
+    bash scripts/teardown.sh
+    docker compose --profile core down
+```
 
 ---
 
@@ -448,7 +483,9 @@ python3 seed/produce_finance_events.py
 | `serving/main.py` | Edit | Register finance router |
 | `serving/requirements.txt` | Edit | Add `snowflake-connector-python` |
 | `.env.example` | Edit | Add Snowflake, HubSpot, and `NGROK_AUTHTOKEN` env vars |
-| `scripts/setup.sh` | Edit | Add ngrok tunnel start + Fivetran copy-paste block print after seed step |
+| `scripts/setup.sh` | Edit | Add Kafka event producer + ngrok tunnel start + Fivetran copy-paste block print after seed step |
+| `scripts/teardown.sh` | Create | Kill ngrok, truncate finance tables, reset Kafka topic — called by `make down` |
+| `Makefile` | Edit | Extend `down` target to call `scripts/teardown.sh` before stopping Docker |
 | `docs/fivetran-finance-setup.md` | Create | Full click-by-click Fivetran setup guide (from this spec §9) |
 
 ---
