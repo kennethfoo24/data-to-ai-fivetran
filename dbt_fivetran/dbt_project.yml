@@ -1,0 +1,14 @@
+name: 'shopstream_finance'
+version: '1.0.0'
+config-version: 2
+
+profile: 'shopstream_finance'
+
+model-paths: ["models"]
+target-path: "target"
+clean-targets: ["target", "dbt_packages"]
+
+models:
+  shopstream_finance:
+    +materialized: table
+    +schema: finance_transformed

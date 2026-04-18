@@ -1,0 +1,9 @@
+version: 2
+
+sources:
+  - name: finance_raw
+    schema: finance_raw
+    tables:
+      - name: finance_invoices
+      - name: finance_payments
+      - name: customers
