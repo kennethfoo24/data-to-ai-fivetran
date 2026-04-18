@@ -6,5 +6,8 @@ sources:
     schema: FINANCE_RAW
     tables:
       - name: finance_invoices
+        identifier: '"finance_invoices"'
       - name: finance_payments
+        identifier: '"finance_payments"'
       - name: customers
+        identifier: '"customers"'
