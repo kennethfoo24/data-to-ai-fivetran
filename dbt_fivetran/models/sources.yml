@@ -3,7 +3,7 @@ version: 2
 sources:
   - name: finance_raw
     database: PC_FIVETRAN_DB
-    schema: FINANCE_RAW
+    schema: SHOPSTREAM_FINANCE_FINANCE
     tables:
       - name: CUSTOMERS
       - name: FINANCE_INVOICES
