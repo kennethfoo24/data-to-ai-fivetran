@@ -12,4 +12,4 @@ SELECT
     WHEN CURRENT_DATE - due_date <= 60 THEN '31-60 days'
     ELSE '60+ days'
   END AS aging_bucket
-FROM {{ source('finance_raw', 'finance_invoices') }}
+FROM {{ source('finance_raw', 'FINANCE_INVOICES') }}

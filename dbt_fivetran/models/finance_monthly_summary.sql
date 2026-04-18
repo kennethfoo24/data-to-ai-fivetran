@@ -6,6 +6,6 @@ SELECT
   SUM(CASE WHEN method = 'card'   THEN amount_paid ELSE 0 END) AS card_revenue,
   SUM(CASE WHEN method = 'bank'   THEN amount_paid ELSE 0 END) AS bank_revenue,
   SUM(CASE WHEN method = 'paypal' THEN amount_paid ELSE 0 END) AS paypal_revenue
-FROM {{ source('finance_raw', 'finance_payments') }}
+FROM {{ source('finance_raw', 'FINANCE_PAYMENTS') }}
 GROUP BY 1
 ORDER BY 1

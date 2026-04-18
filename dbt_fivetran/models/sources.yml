@@ -4,9 +4,7 @@ sources:
   - name: finance_raw
     database: PC_FIVETRAN_DB
     schema: FINANCE_RAW
-    quoting:
-      identifier: true
     tables:
-      - name: finance_invoices
-      - name: finance_payments
-      - name: customers
+      - name: CUSTOMERS
+      - name: FINANCE_INVOICES
+      - name: FINANCE_PAYMENTS

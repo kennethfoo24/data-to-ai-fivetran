@@ -5,8 +5,8 @@ WITH payment_stats AS (
     SUM(CASE WHEN i.status = 'paid' THEN 1 ELSE 0 END) AS paid_invoices,
     SUM(p.amount_paid)                                  AS total_paid,
     MAX(p.payment_date)                                 AS last_payment_date
-  FROM {{ source('finance_raw', 'finance_invoices') }} i
-  LEFT JOIN {{ source('finance_raw', 'finance_payments') }} p ON i.invoice_id = p.invoice_id
+  FROM {{ source('finance_raw', 'FINANCE_INVOICES') }} i
+  LEFT JOIN {{ source('finance_raw', 'FINANCE_PAYMENTS') }} p ON i.invoice_id = p.invoice_id
   GROUP BY i.customer_id
 )
 SELECT
