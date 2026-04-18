@@ -2,6 +2,7 @@ version: 2
 
 sources:
   - name: finance_raw
+    database: PC_FIVETRAN_DB
     schema: finance_raw
     tables:
       - name: finance_invoices
