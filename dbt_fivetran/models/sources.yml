@@ -3,7 +3,7 @@ version: 2
 sources:
   - name: finance_raw
     database: PC_FIVETRAN_DB
-    schema: public
+    schema: postgresql_fivetran_finance_public
     tables:
       - name: finance_invoices
       - name: finance_payments
