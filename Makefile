@@ -4,7 +4,7 @@ ifneq (,$(wildcard .env))
   export
 endif
 
-.PHONY: up down seed logs ps build clean setup help
+.PHONY: up down seed logs ps build clean setup produce-finance-events help
 
 ## Start all services (~8GB RAM)
 up:
@@ -40,6 +40,10 @@ clean:
 ## One-shot setup (copies .env, builds images, starts, seeds)
 setup:
 	bash scripts/setup.sh
+
+## Produce 100 synthetic finance events to Confluent Cloud (requires CONFLUENT_* vars in .env)
+produce-finance-events:
+	python3 kafka/produce_finance_events.py
 
 ## Show this help
 help:
