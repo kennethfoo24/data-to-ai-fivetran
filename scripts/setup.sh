@@ -18,6 +18,8 @@ else
   echo "✓ .env already exists."
 fi
 
+[ -f .env ] && export $(grep -v '^#' .env | xargs) 2>/dev/null || true
+
 # Generate AIRFLOW_FERNET_KEY if it's still the placeholder
 if grep -q "^AIRFLOW_FERNET_KEY=GENERATE_ME" .env; then
   FERNET_KEY=$(python3 -c "import base64, os; print(base64.urlsafe_b64encode(os.urandom(32)).decode())")
@@ -82,90 +84,98 @@ echo ""
 echo "→ Producing Kafka finance events..."
 python3 seed/produce_finance_events.py && echo "✓ Finance events published." || echo "  (skipped — Kafka not reachable)"
 
-# 9. ngrok tunnels (optional — for Fivetran demo)
+# 9. Cloud SQL — validate or provision
 echo ""
-[ -f .env ] && export $(grep -v '^#' .env | xargs) 2>/dev/null || true
-if ! command -v ngrok &> /dev/null; then
-  echo "  (skipped) ngrok not found. Install to auto-expose for Fivetran:"
-  echo "    Mac:   brew install ngrok/ngrok/ngrok"
-  echo "    Linux: snap install ngrok"
-  echo "  Then add NGROK_AUTHTOKEN=<token> to .env and re-run make setup."
-elif [ -z "${NGROK_AUTHTOKEN:-}" ]; then
-  echo "  (skipped) NGROK_AUTHTOKEN not set in .env"
-  echo "  Get a free token at https://dashboard.ngrok.com/get-started/your-authtoken"
+echo "→ Checking Cloud SQL (Fivetran Finance demo database)..."
+
+TERRAFORM_DIR="infra/terraform/cloudsql"
+
+if ! command -v terraform &> /dev/null; then
+  echo "  ⚠ terraform not found — skipping Cloud SQL step."
+  echo "    Install: brew tap hashicorp/tap && brew install hashicorp/tap/terraform"
+elif ! command -v gcloud &> /dev/null; then
+  echo "  ⚠ gcloud not found — skipping Cloud SQL step."
+  echo "    Install: brew install --cask google-cloud-sdk && gcloud auth application-default login"
 else
-  ngrok config add-authtoken "$NGROK_AUTHTOKEN" --log=false 2>/dev/null || true
-  pkill -f ngrok 2>/dev/null || true
-  sleep 1
+  # Check if the instance already exists in GCP
+  CLOUDSQL_EXISTS=$(gcloud sql instances list \
+    --project=fivetran-493702 \
+    --filter="name=shopstream-postgres" \
+    --format="value(name)" 2>/dev/null || echo "")
 
-  cat > /tmp/ngrok-shopstream.yml << NGROK_EOF
-version: "2"
-authtoken: ${NGROK_AUTHTOKEN}
-tunnels:
-  postgres:
-    proto: tcp
-    addr: 5432
-  kafka:
-    proto: tcp
-    addr: 9092
-NGROK_EOF
+  if [ -n "$CLOUDSQL_EXISTS" ]; then
+    echo "  ✓ Cloud SQL instance shopstream-postgres already exists."
+    CLOUDSQL_IP=$(gcloud sql instances describe shopstream-postgres \
+      --project=fivetran-493702 \
+      --format="value(ipAddresses[0].ipAddress)" 2>/dev/null || echo "")
+  else
+    echo "  → Cloud SQL instance not found — provisioning with Terraform..."
+    (
+      cd "$TERRAFORM_DIR"
+      terraform init -input=false -no-color 2>/dev/null
+      terraform apply -auto-approve -input=false -no-color
+    )
+    CLOUDSQL_IP=$(cd "$TERRAFORM_DIR" && terraform output -raw host 2>/dev/null || echo "")
+    echo "  ✓ Cloud SQL provisioned."
+  fi
 
-  ngrok start --all --config /tmp/ngrok-shopstream.yml --log /tmp/ngrok.log &
-  sleep 4
+  if [ -n "$CLOUDSQL_IP" ]; then
+    # Check if tables already have data — skip seed if so
+    ROW_COUNT=$(psql "host=${CLOUDSQL_IP} port=5432 dbname=shopstream user=admin password=admin sslmode=require" \
+      -tAc "SELECT COUNT(*) FROM customers;" 2>/dev/null || echo "0")
 
-  TUNNELS_JSON=$(curl -sf http://localhost:4040/api/tunnels 2>/dev/null || echo '{}')
-  PG_URL=$(echo "$TUNNELS_JSON" | python3 -c "
-import sys, json
-tunnels = json.load(sys.stdin).get('tunnels', [])
-for t in tunnels:
-    if '5432' in t.get('config', {}).get('addr', ''):
-        addr = t['public_url'].replace('tcp://', '')
-        host, port = addr.rsplit(':', 1)
-        print(f'{host} {port}')
-        break
-" 2>/dev/null || echo "")
-  KAFKA_URL=$(echo "$TUNNELS_JSON" | python3 -c "
-import sys, json
-tunnels = json.load(sys.stdin).get('tunnels', [])
-for t in tunnels:
-    if '9092' in t.get('config', {}).get('addr', ''):
-        print(t['public_url'].replace('tcp://', ''))
-        break
-" 2>/dev/null || echo "")
+    if [ "${ROW_COUNT}" = "0" ] || [ -z "${ROW_COUNT}" ]; then
+      echo "  → Seeding Cloud SQL schema and data..."
+      psql "host=${CLOUDSQL_IP} port=5432 dbname=shopstream user=admin password=admin sslmode=require" \
+        -f "${TERRAFORM_DIR}/seed.sql" -q
+      psql "host=${CLOUDSQL_IP} port=5432 dbname=shopstream user=admin password=admin sslmode=require" \
+        -c "\COPY customers FROM 'seed/data/customers.csv' CSV HEADER" -q
+      psql "host=${CLOUDSQL_IP} port=5432 dbname=shopstream user=admin password=admin sslmode=require" \
+        -c "\COPY finance_invoices FROM 'seed/data/finance_invoices.csv' CSV HEADER" -q
+      psql "host=${CLOUDSQL_IP} port=5432 dbname=shopstream user=admin password=admin sslmode=require" \
+        -c "\COPY finance_payments FROM 'seed/data/finance_payments.csv' CSV HEADER" -q
+      echo "  ✓ Cloud SQL seeded."
+    else
+      echo "  ✓ Cloud SQL already has data (${ROW_COUNT} customers) — skipping seed."
+    fi
 
-  PG_HOST=$(echo "$PG_URL" | cut -d' ' -f1)
-  PG_PORT=$(echo "$PG_URL" | cut -d' ' -f2)
+    FIVETRAN_PASSWORD=$(cd "$TERRAFORM_DIR" && terraform output -raw fivetran_password 2>/dev/null || echo "<run: terraform output -raw fivetran_password>")
 
-  if [ -n "$PG_HOST" ]; then
     echo ""
     echo "╔══════════════════════════════════════════════════════════════════════╗"
     echo "║   Fivetran Finance — Connection Details (copy-paste these)           ║"
     echo "╠══════════════════════════════════════════════════════════════════════╣"
     echo "║                                                                      ║"
-    echo "║   POSTGRES SOURCE CONNECTOR                                          ║"
-    printf "║   Host:      %-55s║\n" "$PG_HOST"
-    printf "║   Port:      %-55s║\n" "$PG_PORT"
+    echo "║   POSTGRES SOURCE CONNECTOR (Cloud SQL)                              ║"
+    printf "║   Host:      %-55s║\n" "${CLOUDSQL_IP}"
+    echo "║   Port:      5432                                                    ║"
     echo "║   Database:  shopstream                                              ║"
-    echo "║   User:      admin                                                   ║"
-    echo "║   Password:  admin                                                   ║"
+    echo "║   User:      fivetran                                                ║"
+    printf "║   Password:  %-55s║\n" "${FIVETRAN_PASSWORD}"
+    echo "║   SSL:       required                                                ║"
     echo "║   Tables:    finance_invoices, finance_payments, customers           ║"
     echo "║                                                                      ║"
-    echo "║   KAFKA SOURCE CONNECTOR                                             ║"
-    printf "║   Bootstrap: %-55s║\n" "$KAFKA_URL"
+    echo "║   KAFKA SOURCE CONNECTOR (local)                                     ║"
+    echo "║   Bootstrap: localhost:9092                                          ║"
     echo "║   Topic:     shopstream.finance                                      ║"
     echo "║   Protocol:  PLAINTEXT                                               ║"
     echo "║                                                                      ║"
-    echo "║   HUBSPOT REVERSE ETL — FIELD MAPPINGS                               ║"
+    echo "║   SNOWFLAKE DESTINATION                                              ║"
+    echo "║   Account:   KKGCKAP-CD56063                                         ║"
+    echo "║   Database:  SHOPSTREAM                                              ║"
+    echo "║   Warehouse: COMPUTE_WH                                              ║"
+    echo "║   Role:      ACCOUNTADMIN                                            ║"
+    echo "║                                                                      ║"
+    echo "║   HUBSPOT REVERSE ETL                                                ║"
+    echo "║   Portal ID: 245945263                                               ║"
     echo "║   Source:    SHOPSTREAM.transformed.customer_segments                ║"
     echo "║   Unique ID: customer_id → Contact External ID                       ║"
     echo "║   segment      → revenue_segment (custom property)                   ║"
     echo "║   total_paid   → total_revenue   (custom property)                   ║"
     echo "║                                                                      ║"
     echo "║   Fivetran:  https://fivetran.com/dashboard                          ║"
-    printf "║   HubSpot:   https://app.hubspot.com/contacts/%-24s║\n" "${HUBSPOT_PORTAL_ID:-<your-portal-id>}"
+    echo "║   Cloud SQL: https://console.cloud.google.com/sql/instances/shopstream-postgres/studio?project=fivetran-493702 ║"
     echo "╚══════════════════════════════════════════════════════════════════════╝"
-  else
-    echo "  ⚠ ngrok started but could not read tunnel URLs — check http://localhost:4040"
   fi
 fi
 

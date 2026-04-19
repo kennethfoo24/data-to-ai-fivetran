@@ -70,6 +70,13 @@ const logos: Record<string, React.ReactNode> = {
       <path d="M21 14.5v2.5a5.5 5.5 0 11-5.5-5.5H18" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round"/>
     </svg>
   ),
+  dbt: (
+    <svg viewBox="0 0 32 32" width="24" height="24">
+      <rect width="32" height="32" rx="6" fill="#FF694A"/>
+      <path d="M7 16L16 7l9 9-9 9-9-9z" fill="white" opacity="0.9"/>
+      <circle cx="16" cy="16" r="3" fill="#FF694A"/>
+    </svg>
+  ),
 }
 
 // ─── Node ────────────────────────────────────────────────────────────────────
@@ -110,12 +117,16 @@ function PipelineNode({ data }: NodeProps) {
         animationDelay: `${(nd.animDelay ?? 0) * 45}ms`,
         cursor: isClickable ? 'pointer' : 'default',
         outline: nd.clickable ? `2px solid ${color}40` : undefined,
+        width: 280,
+        boxSizing: 'border-box',
       }}
       onClick={() => { if (nd.url && !nd.clickable) window.open(nd.url as string, '_blank') }}
       title={nd.clickable ? 'Click to view BI charts' : nd.label}
     >
-      <Handle type="target" position={Position.Left}  id="in"  />
-      <Handle type="source" position={Position.Right} id="out" />
+      <Handle type="target" position={Position.Left}   id="in"         />
+      <Handle type="source" position={Position.Right}  id="out"        />
+      <Handle type="source" position={Position.Bottom} id="bottom-out" />
+      <Handle type="target" position={Position.Top}    id="top-in"     />
 
       <div style={{
         position: 'absolute', top: 0, left: 20, right: 20, height: 3,
@@ -218,8 +229,8 @@ const edgeTypes = { silk: SilkEdge }
 
 // ─── Layout ───────────────────────────────────────────────────────────────────
 
-const COL = { src: 20, conn: 260, sraw: 500, xfm: 740, sclean: 980, retl: 1220, hub: 1460 }
-const ROW = { top: 80, mid: 185, bot: 290 }
+const COL = { src: 20, conn: 420, sraw: 820, xfm: 1220, sclean: 1620, retl: 2020, hub: 2420 }
+const ROW = { top: 80, mid: 220, bot: 360 }
 
 function buildGraph(): { nodes: Node[]; edges: Edge[] } {
   const nodes: Node[] = [
@@ -231,14 +242,15 @@ function buildGraph(): { nodes: Node[]; edges: Edge[] } {
     { id: 'lbl-retl',   type: 'layer', position: { x: COL.retl,   y: 20 }, data: { label: 'Reverse ETL'  }, draggable: false },
     { id: 'lbl-hub',    type: 'layer', position: { x: COL.hub,    y: 20 }, data: { label: 'HubSpot'      }, draggable: false },
 
-    { id: 'pg-source',   type: 'pipeline', position: { x: COL.src,    y: ROW.top }, data: { label: 'Postgres',           sublabel: 'Finance · Revenue',              logoKey: 'postgres',  url: 'http://localhost:5050', status: 'active', tag: 'source',       category: 'source',      animDelay: 0 } },
+    { id: 'pg-source',   type: 'pipeline', position: { x: COL.src,    y: ROW.top }, data: { label: 'Postgres',           sublabel: 'Finance · Revenue',              logoKey: 'postgres',  url: 'https://console.cloud.google.com/sql/instances/shopstream-postgres/studio?project=fivetran-493702', status: 'active', tag: 'cloud sql',    category: 'source',      animDelay: 0 } },
     { id: 'kafka-source',type: 'pipeline', position: { x: COL.src,    y: ROW.bot }, data: { label: 'Kafka',              sublabel: 'shopstream.finance',              logoKey: 'kafka',     url: 'http://localhost:8080', status: 'active', tag: 'streaming',    category: 'source',      animDelay: 1 } },
     { id: 'ftv-connector',type:'pipeline', position: { x: COL.conn,   y: ROW.mid }, data: { label: 'Fivetran ELT',       sublabel: 'Postgres + Kafka sync',           logoKey: 'fivetran',  url: 'https://fivetran.com/dashboard/connections', status: 'active', tag: 'connector', category: 'connector', animDelay: 2 } },
-    { id: 'snow-raw',    type: 'pipeline', position: { x: COL.sraw,   y: ROW.mid }, data: { label: 'Snowflake Raw',      sublabel: 'invoices · payments · events',    logoKey: 'snowflake', url: 'https://app.snowflake.com', status: 'active', tag: 'raw',       category: 'warehouse',   animDelay: 3 } },
+    { id: 'snow-raw',    type: 'pipeline', position: { x: COL.sraw,   y: ROW.mid }, data: { label: 'Snowflake Raw',      sublabel: 'invoices · payments · events',    logoKey: 'snowflake', url: 'https://app.snowflake.com/kkgckap/cd56063/#/data/databases/PC_FIVETRAN_DB/schemas/SHOPSTREAM_FINANCE_FINANCE/table/CUSTOMERS/data-preview', status: 'active', tag: 'raw',       category: 'warehouse',   animDelay: 3 } },
     { id: 'ftv-transforms',type:'pipeline',position: { x: COL.xfm,   y: ROW.mid }, data: { label: 'Fivetran Transforms', sublabel: 'No Airflow · runs after sync',    logoKey: 'fivetran',  url: 'https://fivetran.com/dashboard/transformations', status: 'active', tag: 'dbt · managed', category: 'transform', animDelay: 4 } },
+    { id: 'dbt-models',   type: 'pipeline', position: { x: COL.xfm,   y: ROW.bot }, data: { label: 'dbt Models',          sublabel: 'finance_transformed · 3 models',  logoKey: 'dbt',       url: 'https://github.com/kennethfoo24/data-to-ai-fivetran/tree/main/dbt_fivetran/models', status: 'active', tag: 'dbt core', category: 'transform', animDelay: 4 } },
     { id: 'snow-transformed',type:'pipeline',position:{x: COL.sclean, y: ROW.mid }, data: { label: 'Snowflake Clean',   sublabel: 'invoice_aging · segments · MRR',  logoKey: 'snowflake', status: 'active', tag: 'transformed', category: 'warehouse', animDelay: 5, clickable: true } },
-    { id: 'ftv-reverse-etl',type:'pipeline',position: { x: COL.retl,  y: ROW.mid }, data: { label: 'Reverse ETL',       sublabel: 'Snowflake → HubSpot',             logoKey: 'fivetran',  url: 'https://fivetran.com/dashboard/reverse-etl', status: 'active', tag: 'reverse etl', category: 'platform', animDelay: 6 } },
-    { id: 'hubspot',     type: 'pipeline', position: { x: COL.hub,    y: ROW.mid }, data: { label: 'HubSpot CRM',       sublabel: 'Customer segments',               logoKey: 'hubspot',   url: 'https://app.hubspot.com/contacts', status: 'active', tag: 'destination', category: 'crm', animDelay: 7 } },
+    { id: 'ftv-reverse-etl',type:'pipeline',position: { x: COL.retl,  y: ROW.mid }, data: { label: 'Reverse ETL',       sublabel: 'Snowflake → HubSpot',             logoKey: 'fivetran',  url: 'https://fivetran.com/dashboard/transformations', status: 'active', tag: 'reverse etl', category: 'platform', animDelay: 6 } },
+    { id: 'hubspot',     type: 'pipeline', position: { x: COL.hub,    y: ROW.mid }, data: { label: 'HubSpot CRM',       sublabel: 'Customer segments',               logoKey: 'hubspot',   url: 'https://app-na2.hubspot.com/contacts/245945263/objects/0-1/views/all/list?prefetch=', status: 'active', tag: 'destination', category: 'crm', animDelay: 7 } },
   ]
 
   const e = (id: string, source: string, target: string): Edge => ({
@@ -255,6 +267,7 @@ function buildGraph(): { nodes: Node[]; edges: Edge[] } {
       e('e3', 'ftv-connector',   'snow-raw'),
       e('e4', 'snow-raw',        'ftv-transforms'),
       e('e5', 'ftv-transforms',  'snow-transformed'),
+      { id: 'e8', source: 'ftv-transforms', target: 'dbt-models', sourceHandle: 'bottom-out', targetHandle: 'top-in', type: 'silk', markerEnd: { type: MarkerType.ArrowClosed, width: 11, height: 11, color: 'rgba(99,102,241,0.45)' } },
       e('e6', 'snow-transformed','ftv-reverse-etl'),
       e('e7', 'ftv-reverse-etl', 'hubspot'),
     ],

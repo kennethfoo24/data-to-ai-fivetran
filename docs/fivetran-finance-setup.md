@@ -1,8 +1,8 @@
 # Fivetran Finance — Step-by-Step Setup Guide
 
-This guide walks through configuring Fivetran to sync ShopStream's finance data (Postgres + Kafka) to Snowflake, run dbt transformations, and push customer segments to HubSpot via Reverse ETL.
+This guide walks through configuring Fivetran to sync ShopStream's finance data (Cloud SQL Postgres + Kafka) to Snowflake, run dbt transformations, and push customer segments to HubSpot via Reverse ETL.
 
-**Before you start:** You need a Fivetran account (free trial at fivetran.com), a Snowflake account, and a HubSpot account (free tier works).
+**Before you start:** Run `make setup` — it provisions Cloud SQL, seeds data, and prints all connection details.
 
 ---
 
@@ -12,31 +12,37 @@ This guide walks through configuring Fivetran to sync ShopStream's finance data 
 make setup
 ```
 
-This starts all services, seeds finance data into Postgres, publishes 500 events to `shopstream.finance` Kafka topic, starts ngrok tunnels, and prints a formatted copy-paste block:
+This starts all services, seeds finance data into local Postgres and Cloud SQL, produces 500 Kafka events, and prints a formatted copy-paste block:
 
 ```
 ╔══════════════════════════════════════════════════════════════════════╗
 ║   Fivetran Finance — Connection Details (copy-paste these)           ║
 ╠══════════════════════════════════════════════════════════════════════╣
 ║                                                                      ║
-║   POSTGRES SOURCE CONNECTOR                                          ║
-║   Host:      0.tcp.ngrok.io                                          ║
-║   Port:      12345                                                   ║
+║   POSTGRES SOURCE CONNECTOR (Cloud SQL)                              ║
+║   Host:      34.132.27.154                                           ║
+║   Port:      5432                                                    ║
 ║   Database:  shopstream                                              ║
-║   User:      admin                                                   ║
-║   Password:  admin                                                   ║
+║   User:      fivetran                                                ║
+║   Password:  <generated>                                             ║
+║   SSL:       required                                                ║
 ║   Tables:    finance_invoices, finance_payments, customers           ║
 ║                                                                      ║
-║   KAFKA SOURCE CONNECTOR                                             ║
-║   Bootstrap: 0.tcp.ngrok.io:56789                                    ║
-║   Topic:     shopstream.finance                                      ║
-║   Protocol:  PLAINTEXT                                               ║
+║   SNOWFLAKE DESTINATION                                              ║
+║   Account:   KKGCKAP-CD56063                                         ║
+║   Database:  SHOPSTREAM                                              ║
+║   Warehouse: COMPUTE_WH                                              ║
+║   Role:      ACCOUNTADMIN                                            ║
+║                                                                      ║
+║   HUBSPOT REVERSE ETL                                                ║
+║   Portal ID: 245945263                                               ║
 ╚══════════════════════════════════════════════════════════════════════╝
 ```
 
-Keep this terminal open — you'll copy values from it in the steps below.
-
-> **ngrok required:** If you don't have ngrok installed: `brew install ngrok/ngrok/ngrok` (Mac) or `snap install ngrok` (Linux). Get a free auth token at https://dashboard.ngrok.com/get-started/your-authtoken and add `NGROK_AUTHTOKEN=<token>` to your `.env` file, then re-run `make setup`.
+> **Prerequisites:** `terraform`, `gcloud` (authenticated), and `psql` must be installed.
+> - `brew tap hashicorp/tap && brew install hashicorp/tap/terraform`
+> - `brew install --cask google-cloud-sdk && gcloud auth application-default login`
+> - `brew install libpq && echo 'export PATH="/opt/homebrew/opt/libpq/bin:$PATH"' >> ~/.zshrc`
 
 ---
 
@@ -48,61 +54,48 @@ Keep this terminal open — you'll copy values from it in the steps below.
 
 ---
 
-## Step 3: Configure Postgres source connector
+## Step 3: Configure Snowflake destination
+
+1. Fivetran sidebar → **Destinations** → **Add Destination** → select **Snowflake**
+2. Fill in credentials:
+   - **Account:** `KKGCKAP-CD56063`
+   - **Database:** `SHOPSTREAM`
+   - **Warehouse:** `COMPUTE_WH`
+   - **User:** `KENNETHFOO24`
+   - **Password:** your Snowflake password
+   - **Role:** `ACCOUNTADMIN`
+3. Click **Save & Test** — wait for green checkmark
+
+---
+
+## Step 4: Configure Postgres source connector (Cloud SQL)
 
 Use the values from the **POSTGRES SOURCE CONNECTOR** block printed by `make setup`.
 
-1. In the Fivetran dashboard → click **Add Connector** → search for **PostgreSQL** → select it
-2. **Destination schema prefix:** type `finance_raw`
-3. **Host:** paste the ngrok host (e.g. `0.tcp.ngrok.io`)
-4. **Port:** paste the ngrok port (e.g. `12345`)
-5. **User:** `admin`
-6. **Password:** `admin`
+1. Fivetran dashboard → **Add Connector** → search **PostgreSQL** → select it
+2. **Destination schema prefix:** `finance_raw`
+3. **Host:** paste the Cloud SQL IP (e.g. `34.132.27.154`)
+4. **Port:** `5432`
+5. **User:** `fivetran`
+6. **Password:** paste from `make setup` output (or run `cd infra/terraform/cloudsql && terraform output -raw fivetran_password`)
 7. **Database:** `shopstream`
-8. Click **Save & Test** — wait for the green checkmark
-9. Click the **Schema** tab → expand `shopstream` → check the boxes for: `finance_invoices`, `finance_payments`, `customers`
-10. Set **Sync Frequency:** `Every 6 hours` (or **Manual** for demo control)
-11. Click **Save & Continue**
+8. **Connection method:** Direct Connection
+9. **Update method:** Query-Based
+10. Click **Save & Test** — wait for the green checkmark
+11. Click the **Schema** tab → expand `public` → check: `finance_invoices`, `finance_payments`, `customers`
+12. Set **Sync Frequency:** `Every 6 hours` (or **Manual** for demo control)
+13. Click **Save & Continue**
+
+> **Cloud SQL Studio:** Browse data at https://console.cloud.google.com/sql/instances/shopstream-postgres/studio?project=fivetran-493702
 
 ---
 
-## Step 4: Configure Kafka source connector
+## Step 5: Add Fivetran Transformations (dbt models)
 
-Use the values from the **KAFKA SOURCE CONNECTOR** block printed by `make setup`.
+Fivetran Transformations run dbt SQL inside Snowflake — no Airflow, no external compute.
 
-1. Click **Add Connector** → search **Apache Kafka** → select it
-2. **Bootstrap servers:** paste the ngrok bootstrap address (e.g. `0.tcp.ngrok.io:56789`)
-3. **Security protocol:** select `PLAINTEXT`
-4. **Topics:** type `shopstream.finance`
-5. **Consumer group:** type `fivetran-finance`
-6. Click **Save & Test** — wait for green checkmark
-7. **Destination schema prefix:** type `finance_kafka_raw`
-8. Click **Save & Continue**
-
----
-
-## Step 5: Configure Snowflake destination
-
-1. In the Fivetran sidebar → **Destinations** → **Add Destination**
-2. Select **Snowflake**
-3. Fill in your Snowflake credentials:
-   - **Account:** your Snowflake account identifier (e.g. `abc12345.us-east-1`)
-   - **Database:** `SHOPSTREAM`
-   - **Warehouse:** `COMPUTE_WH`
-   - **User:** your Snowflake username
-   - **Password:** your Snowflake password
-   - **Role:** `ACCOUNTADMIN` (or a role with CREATE SCHEMA privileges)
-4. Click **Save & Test** — wait for the green checkmark
-
----
-
-## Step 6: Add Fivetran Transformations (dbt models)
-
-Fivetran Transformations run dbt SQL inside Snowflake — no Airflow, no external compute. They trigger automatically after every connector sync.
-
-1. In Fivetran sidebar → **Transformations** → **Add Transformation**
-2. Select **dbt Core**
-3. Click **New Model** for each of the 3 models below
+1. Fivetran sidebar → **Transformations** → **Add Transformation** → select **dbt Core**
+2. Click **New Model** for each of the 3 models below
 
 ### Model 1: `finance_invoice_aging`
 
@@ -121,7 +114,7 @@ SELECT
     WHEN CURRENT_DATE - due_date <= 60 THEN '31-60 days'
     ELSE '60+ days'
   END AS aging_bucket
-FROM raw.finance_invoices
+FROM finance_raw.finance_invoices
 ```
 
 ### Model 2: `finance_customer_segments`
@@ -134,8 +127,8 @@ WITH payment_stats AS (
     SUM(CASE WHEN i.status = 'paid' THEN 1 ELSE 0 END) AS paid_invoices,
     SUM(p.amount_paid)                                  AS total_paid,
     MAX(p.payment_date)                                 AS last_payment_date
-  FROM raw.finance_invoices i
-  LEFT JOIN raw.finance_payments p ON i.invoice_id = p.invoice_id
+  FROM finance_raw.finance_invoices i
+  LEFT JOIN finance_raw.finance_payments p ON i.invoice_id = p.invoice_id
   GROUP BY i.customer_id
 )
 SELECT
@@ -164,54 +157,51 @@ SELECT
   SUM(CASE WHEN method = 'card'   THEN amount_paid ELSE 0 END) AS card_revenue,
   SUM(CASE WHEN method = 'bank'   THEN amount_paid ELSE 0 END) AS bank_revenue,
   SUM(CASE WHEN method = 'paypal' THEN amount_paid ELSE 0 END) AS paypal_revenue
-FROM raw.finance_payments
+FROM finance_raw.finance_payments
 GROUP BY 1
 ORDER BY 1
 ```
 
-4. For each model, enable **Run after connector sync** and set **Connector:** to your Postgres connector
-5. Click **Save** — Fivetran will now run all 3 transforms automatically after every sync
+3. For each model, enable **Run after connector sync** → set **Connector** to your Postgres connector
+4. Click **Save**
 
 ---
 
-## Step 7: Configure Reverse ETL → HubSpot
+## Step 6: Configure Reverse ETL → HubSpot
 
-1. In Fivetran sidebar → **Reverse ETL** → **Add Sync**
+1. Fivetran sidebar → **Reverse ETL** → **Add Sync**
 2. **Source:** Snowflake → database `SHOPSTREAM` → schema `transformed` → table `customer_segments`
-3. **Destination:** HubSpot
-   - Click **Add Destination** → search HubSpot → click **Authorize** and log in with your HubSpot account
+3. **Destination:** HubSpot → click **Authorize** → log in (portal ID: `245945263`)
 4. **Object:** Contacts
 5. **Unique identifier:** map `customer_id` → HubSpot Contact property `external_id`
 6. **Field mappings:**
 
    | Snowflake column | HubSpot property |
    |-----------------|-----------------|
-   | `segment` | `revenue_segment` (custom property — create it in HubSpot if it doesn't exist) |
-   | `total_paid` | `total_revenue` (custom property) |
-   | `last_payment_date` | `last_payment_date` (custom property) |
+   | `segment` | `revenue_segment` (custom — create in HubSpot Settings → Properties) |
+   | `total_paid` | `total_revenue` (custom, type: Number) |
+   | `last_payment_date` | `last_payment_date` (custom, type: Date) |
 
 7. **Sync frequency:** After every transformation run
 8. Click **Save & Run**
 
-> **To create custom properties in HubSpot:** Go to Settings → Properties → Create property. Set type to `Single-line text` for segment, `Number` for total_revenue, `Date` for last_payment_date.
-
 ---
 
-## Step 8: Connect Snowflake to FastAPI (live charts)
+## Step 7: Connect Snowflake to FastAPI (live charts)
 
-Add your Snowflake credentials to `.env`:
+Add Snowflake credentials to `.env`:
 
 ```
-SNOWFLAKE_ACCOUNT=abc12345.us-east-1
-SNOWFLAKE_USER=your_user
+SNOWFLAKE_ACCOUNT=KKGCKAP-CD56063
+SNOWFLAKE_USER=KENNETHFOO24
 SNOWFLAKE_PASSWORD=your_password
 SNOWFLAKE_DATABASE=SHOPSTREAM
 SNOWFLAKE_SCHEMA=transformed
 SNOWFLAKE_WAREHOUSE=COMPUTE_WH
-HUBSPOT_PORTAL_ID=your_portal_id
+HUBSPOT_PORTAL_ID=245945263
 ```
 
-Rebuild FastAPI to pick up the new env vars:
+Rebuild FastAPI:
 
 ```bash
 docker compose --profile core build fastapi && docker compose --profile core up -d fastapi
@@ -221,28 +211,35 @@ The BI modal in the UI will now show live Snowflake data instead of the simulate
 
 ---
 
-## Step 9: Trigger first sync and verify
+## Step 8: Trigger first sync and verify
 
 ```bash
-# Data is already seeded — just trigger the sync in Fivetran
-# Go to Fivetran dashboard → click your Postgres connector → click "Sync Now"
+# Fivetran dashboard → click your Postgres connector → click "Sync Now"
 # Wait for sync + transformations to complete (~2-5 min)
 
-# Verify in Snowflake (Snowflake web UI or SnowSQL):
+# Verify in Snowflake:
 SELECT * FROM SHOPSTREAM.transformed.finance_monthly_summary LIMIT 5;
 SELECT * FROM SHOPSTREAM.transformed.customer_segments LIMIT 5;
-SELECT * FROM SHOPSTREAM.transformed.invoice_aging LIMIT 5;
+SELECT * FROM SHOPSTREAM.transformed.finance_invoice_aging LIMIT 5;
 ```
 
-Open the UI at http://localhost:3000 → click **Fivetran Finance** tab → click the **Snowflake Clean** node → the BI modal should show live data (no SIMULATED badge).
+Open the UI at http://localhost:3000 → **Fivetran Finance** tab → click the **Snowflake Clean** node → the BI modal should show live data (no SIMULATED badge).
 
 ---
 
 ## Demo Reset
 
-To tear down and restart from scratch:
+To reset local services (keeps Cloud SQL data intact — it's persistent):
 
 ```bash
-make down   # kills ngrok, truncates finance tables, resets Kafka topic, stops Docker
-make setup  # rebuilds everything, re-seeds, prints new ngrok URLs
+make down   # truncates local finance tables, resets Kafka topic, stops Docker
+make setup  # rebuilds everything, re-seeds local Postgres, skips Cloud SQL (already has data)
+```
+
+To fully re-seed Cloud SQL:
+```bash
+HOST=$(cd infra/terraform/cloudsql && terraform output -raw host)
+psql "host=$HOST port=5432 dbname=shopstream user=admin password=admin sslmode=require" \
+  -c "TRUNCATE finance_payments, finance_invoices, customers RESTART IDENTITY CASCADE;"
+# Then re-run make setup — it will re-seed since row count is 0
 ```

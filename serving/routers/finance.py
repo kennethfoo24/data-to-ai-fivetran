@@ -116,3 +116,34 @@ def finance_charts():
         return _query_snowflake()
     except Exception:
         return _simulated_data()
+
+
+@router.get("/api/finance/preview/{table}")
+def finance_preview(table: str):
+    allowed = {"finance_monthly_summary", "finance_customer_segments", "finance_invoice_aging"}
+    if table not in allowed:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404, detail="Unknown table")
+    if not _snowflake_configured():
+        return {"simulated": True, "columns": [], "rows": []}
+    try:
+        import snowflake.connector
+        conn = snowflake.connector.connect(
+            account=os.environ["SNOWFLAKE_ACCOUNT"],
+            user=os.environ["SNOWFLAKE_USER"],
+            password=os.environ["SNOWFLAKE_PASSWORD"],
+            database=os.environ["SNOWFLAKE_DATABASE"],
+            schema=os.environ["SNOWFLAKE_SCHEMA"],
+            warehouse=os.environ["SNOWFLAKE_WAREHOUSE"],
+        )
+        cur = conn.cursor()
+        cur.execute(f"SELECT * FROM {table} LIMIT 20")  # noqa: S608
+        columns = [d[0] for d in cur.description]
+        rows = []
+        for r in cur.fetchall():
+            rows.append([str(v) if v is not None else None for v in r])
+        cur.close()
+        conn.close()
+        return {"simulated": False, "columns": columns, "rows": rows}
+    except Exception as e:
+        return {"simulated": True, "columns": [], "rows": [], "error": str(e)}

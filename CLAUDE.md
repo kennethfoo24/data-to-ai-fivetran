@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**DataFabric** is an end-to-end data & AI portfolio project built around **ShopStream**, a fictional e-commerce platform. It demonstrates a full modern data stack: ingestion → lakehouse → ML training → serving → lineage UI. The project is delivered in 5 phases; all 5 phases are complete.
+**DataFabric** is an end-to-end data & AI portfolio project built around **ShopStream**, a fictional e-commerce platform. It demonstrates a full modern data stack: ingestion → lakehouse → ML training → serving → lineage UI → reverse ETL. The project is delivered in 7 phases; all 7 phases are complete.
 
 ## Common Commands
 
@@ -112,6 +112,7 @@ All 6 phases complete and verified end-to-end. `make setup` brings up 9 services
 - **Phase 4** (Serving — FastAPI): Complete
 - **Phase 5** (UI — Next.js lineage dashboard): Complete
 - **Phase 6** (Iceberg Catalog Explorer): Complete
+- **Phase 7** (Fivetran Activations → HubSpot Reverse ETL): Complete
 
 ## Phase 2 — Completed (2026-04-08)
 
@@ -279,3 +280,80 @@ Clicking any Iceberg node (bronze/silver/gold) or dbt node opens a modal showing
 - **`pyarrow` conflicts with `mlflow<2.14`**: `pyarrow>=17` required by pyiceberg breaks mlflow. Use `pyarrow` without version pin in `serving/requirements.txt` — mlflow 2.12.2 works fine with pyarrow in the serving container (not the Airflow container).
 - **Non-JSON-safe types**: Parquet columns like `date32`, `decimal128`, timestamps must be cast to string before returning as JSON. Handle `math.isnan` for float NaN → None.
 - **`warehouse` volume on fastapi**: Must add `- warehouse:/warehouse` to fastapi volumes in `docker-compose.yml` and declare `warehouse:` in top-level `volumes:`.
+
+## Phase 7 — Completed (2026-04-19): Fivetran Activations → HubSpot Reverse ETL
+
+Syncs cleaned Snowflake data back to HubSpot CRM via Fivetran Activations (powered by Census). Customer segment and invoice status data is pushed as enriched contact properties. The Finance tab in the UI now shows the full lineage: Postgres/Kafka → ELT → Snowflake Raw → Transforms → Snowflake Clean → Reverse ETL → HubSpot.
+
+| Component | Details |
+|-----------|---------|
+| `ui/components/FinanceGraph.tsx` | Finance lineage graph: 7 columns, dbt node below Fivetran Transforms, HubSpot node links to live contacts |
+| `ui/components/FinanceBIModal.tsx` | BI charts modal (MRR trend, payment mix, invoice aging, customer health) |
+| `serving/routers/finance.py` | FastAPI router: `/api/finance/charts` + `/api/finance/preview/{table}` |
+| `dbt_fivetran/models/` | 3 dbt models: `finance_customer_segments`, `finance_invoice_aging`, `finance_monthly_summary` |
+| `dbt_fivetran/models/sources.yml` | Source: `PC_FIVETRAN_DB.SHOPSTREAM_FINANCE_FINANCE` (CUSTOMERS, FINANCE_INVOICES, FINANCE_PAYMENTS) |
+
+### Snowflake setup for Fivetran Activations (Census)
+Fivetran Activations uses a `CENSUS_ROLE` / `CENSUS_USER` / `CENSUS_WAREHOUSE` convention internally:
+
+```sql
+CREATE ROLE CENSUS_ROLE;
+CREATE USER CENSUS_USER RSA_PUBLIC_KEY='<your-public-key>';
+ALTER USER CENSUS_USER SET DEFAULT_ROLE = CENSUS_ROLE;
+GRANT ROLE CENSUS_ROLE TO USER CENSUS_USER;
+CREATE WAREHOUSE CENSUS_WAREHOUSE WITH WAREHOUSE_SIZE = 'XSMALL';
+GRANT USAGE ON WAREHOUSE CENSUS_WAREHOUSE TO ROLE CENSUS_ROLE;
+CREATE DATABASE IF NOT EXISTS CENSUS;
+CREATE SCHEMA IF NOT EXISTS CENSUS.CENSUS;
+GRANT ALL ON DATABASE CENSUS TO ROLE CENSUS_ROLE;
+GRANT ALL ON ALL SCHEMAS IN DATABASE CENSUS TO ROLE CENSUS_ROLE;
+GRANT USAGE ON DATABASE PC_FIVETRAN_DB TO ROLE CENSUS_ROLE;
+GRANT USAGE ON SCHEMA PC_FIVETRAN_DB.SHOPSTREAM_FINANCE_FINANCE TO ROLE CENSUS_ROLE;
+GRANT SELECT ON ALL TABLES IN SCHEMA PC_FIVETRAN_DB.SHOPSTREAM_FINANCE_FINANCE TO ROLE CENSUS_ROLE;
+GRANT USAGE ON DATABASE PC_FIVETRAN_DB TO ROLE CENSUS_ROLE;
+GRANT USAGE ON SCHEMA PC_FIVETRAN_DB.FINANCE_TRANSFORMED TO ROLE CENSUS_ROLE;
+GRANT SELECT ON ALL TABLES IN SCHEMA PC_FIVETRAN_DB.FINANCE_TRANSFORMED TO ROLE CENSUS_ROLE;
+```
+
+### Dataset SQL (joins 3 tables across 2 schemas)
+```sql
+SELECT
+  c.EMAIL,
+  c.NAME,
+  cs.SEGMENT       AS CUSTOMER_SEGMENT,
+  (SELECT AGING_BUCKET FROM PC_FIVETRAN_DB.FINANCE_TRANSFORMED.FINANCE_INVOICE_AGING
+   WHERE CUSTOMER_ID = c.ID ORDER BY UPDATED_AT DESC LIMIT 1) AS INVOICE_STATUS
+FROM PC_FIVETRAN_DB.SHOPSTREAM_FINANCE_FINANCE.CUSTOMERS c
+LEFT JOIN PC_FIVETRAN_DB.FINANCE_TRANSFORMED.FINANCE_CUSTOMER_SEGMENTS cs
+  ON cs.CUSTOMER_ID = c.ID
+WHERE cs.SEGMENT IS NOT NULL
+```
+
+### Segments created
+- **At Risk** (`CUSTOMER_SEGMENT = 'at_risk'`) — 871 contacts
+- **Churned** (`CUSTOMER_SEGMENT = 'churned'`) — 406 contacts
+- Champion segment was omitted — no champion data exists in transformed tables
+
+### HubSpot custom properties
+Created under Contacts → Properties:
+- `customer_segment` (Single-line text)
+- `invoice_status` (Single-line text)
+
+Sync key: `EMAIL` (unique per contact)
+
+### FinanceGraph.tsx key details
+- 7 columns: Sources / ELT / Snowflake Raw / Transforms / Snowflake Clean / Reverse ETL / HubSpot
+- `COL` constants: `{ src: 20, conn: 420, sraw: 820, xfm: 1220, sclean: 1620, retl: 2020, hub: 2420 }`
+- `ROW` constants: `{ top: 80, mid: 220, bot: 360 }`
+- dbt node sits at `(COL.xfm, ROW.bot)` — connected from Fivetran Transforms via `bottom-out → top-in` handles
+- `PipelineNode` exposes 4 handles: `in` (left), `out` (right), `bottom-out` (bottom), `top-in` (top)
+- HubSpot node URL: `https://app-na2.hubspot.com/contacts/245945263/objects/0-1/views/all/list?prefetch=`
+- dbt node URL: `https://github.com/kennethfoo24/data-to-ai-fivetran/tree/main/dbt_fivetran/models`
+
+### Key lessons learned
+- **Fivetran Activations uses Census infrastructure**: Requires `CENSUS_ROLE`, `CENSUS_USER`, `CENSUS_WAREHOUSE`, and a `CENSUS.CENSUS` schema in Snowflake — must be created and granted explicitly.
+- **CUSTOMERS table has `NAME` not `FIRST_NAME`/`LAST_NAME`**: The seeded schema uses a single `NAME` column.
+- **FINANCE_INVOICE_AGING has multiple rows per customer**: Use a subquery with `ORDER BY UPDATED_AT DESC LIMIT 1` to get the latest bucket per customer, avoiding duplicate contacts.
+- **Sync key must be unique**: Use `EMAIL` as the sync key, not `CUSTOMER_SEGMENT` (which is not unique).
+- **No champion data**: `FINANCE_CUSTOMER_SEGMENTS` only contains `at_risk` and `churned` values — do not create a Champions segment.
+- **Vertical edges in same column**: Use `sourceHandle: 'bottom-out'` + `targetHandle: 'top-in'` with bezier edge type for clean vertical drops between stacked nodes.

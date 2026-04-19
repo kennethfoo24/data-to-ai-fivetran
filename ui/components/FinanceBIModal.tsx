@@ -40,25 +40,46 @@ const AGING_COLORS: Record<string, string> = {
   '31-60 days': P.rose, '60+ days': '#991b1b',
 }
 
-type TabKey = 'mrr' | 'methods' | 'aging' | 'segments'
+type TabKey = 'mrr' | 'methods' | 'aging' | 'segments' | 'preview'
 
 const TABS: { key: TabKey; label: string }[] = [
   { key: 'mrr',      label: 'MRR Trend' },
   { key: 'methods',  label: 'Payment Mix' },
   { key: 'aging',    label: 'Invoice Aging' },
   { key: 'segments', label: 'Customer Health' },
+  { key: 'preview',  label: 'Data Preview' },
+]
+
+type PreviewTable = 'finance_monthly_summary' | 'finance_customer_segments' | 'finance_invoice_aging'
+interface PreviewResponse { simulated: boolean; columns: string[]; rows: string[][]; error?: string }
+const PREVIEW_TABLES: { key: PreviewTable; label: string }[] = [
+  { key: 'finance_monthly_summary',   label: 'Monthly Summary' },
+  { key: 'finance_customer_segments', label: 'Customer Segments' },
+  { key: 'finance_invoice_aging',     label: 'Invoice Aging' },
 ]
 
 export default function FinanceBIModal({ onClose }: Props) {
-  const [data, setData]       = useState<ChartsResponse | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [activeTab, setTab]   = useState<TabKey>('mrr')
+  const [data, setData]             = useState<ChartsResponse | null>(null)
+  const [loading, setLoading]       = useState(true)
+  const [activeTab, setTab]         = useState<TabKey>('mrr')
+  const [previewTable, setPreviewTable] = useState<PreviewTable>('finance_monthly_summary')
+  const [preview, setPreview]       = useState<PreviewResponse | null>(null)
+  const [previewLoading, setPreviewLoading] = useState(false)
 
   useEffect(() => {
     fetch(`${FASTAPI_URL}/api/finance/charts`, { cache: 'no-store' })
       .then(r => r.json()).then(setData).catch(() => setData(null))
       .finally(() => setLoading(false))
   }, [])
+
+  useEffect(() => {
+    if (activeTab !== 'preview') return
+    setPreviewLoading(true)
+    setPreview(null)
+    fetch(`${FASTAPI_URL}/api/finance/preview/${previewTable}`, { cache: 'no-store' })
+      .then(r => r.json()).then(setPreview).catch(() => setPreview(null))
+      .finally(() => setPreviewLoading(false))
+  }, [activeTab, previewTable])
 
   return (
     <div
@@ -162,6 +183,65 @@ export default function FinanceBIModal({ onClose }: Props) {
                 </Bar>
               </BarChart>
             </ResponsiveContainer>
+          )}
+
+          {activeTab === 'preview' && (
+            <div>
+              {/* Table selector */}
+              <div style={{ display: 'flex', gap: 6, marginBottom: 16 }}>
+                {PREVIEW_TABLES.map(t => (
+                  <button key={t.key} onClick={() => setPreviewTable(t.key)} style={{
+                    padding: '4px 12px', borderRadius: 6, border: '1px solid',
+                    borderColor: previewTable === t.key ? 'rgba(99,102,241,0.4)' : 'var(--border-hairline, rgba(99,102,241,0.12))',
+                    background: previewTable === t.key ? 'rgba(99,102,241,0.08)' : 'transparent',
+                    fontFamily: 'var(--font-mono, monospace)', fontSize: 10,
+                    color: previewTable === t.key ? '#6366f1' : 'var(--ink-tertiary, #9ca3af)',
+                    cursor: 'pointer', letterSpacing: '0.04em',
+                  }}>{t.label}</button>
+                ))}
+              </div>
+
+              {previewLoading && <div style={{ textAlign: 'center', color: 'var(--ink-ghost, #c4c9e2)', paddingTop: 40 }}>Loading…</div>}
+              {!previewLoading && !preview && <div style={{ textAlign: 'center', color: 'var(--ink-ghost, #c4c9e2)', paddingTop: 40 }}>Could not load preview.</div>}
+              {!previewLoading && preview && preview.columns.length === 0 && (
+                <div style={{ textAlign: 'center', color: '#d97706', paddingTop: 40, fontFamily: 'var(--font-mono, monospace)', fontSize: 11 }}>
+                  {preview.error ?? 'No data — Snowflake not configured.'}
+                </div>
+              )}
+              {!previewLoading && preview && preview.columns.length > 0 && (
+                <div style={{ overflowX: 'auto' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontFamily: 'var(--font-mono, monospace)', fontSize: 11 }}>
+                    <thead>
+                      <tr>
+                        {preview.columns.map(col => (
+                          <th key={col} style={{
+                            padding: '6px 10px', textAlign: 'left',
+                            borderBottom: '1px solid rgba(99,102,241,0.15)',
+                            color: '#6366f1', fontWeight: 600, letterSpacing: '0.05em',
+                            whiteSpace: 'nowrap', fontSize: 10,
+                          }}>{col}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {preview.rows.map((row, ri) => (
+                        <tr key={ri} style={{ background: ri % 2 === 0 ? 'transparent' : 'rgba(99,102,241,0.03)' }}>
+                          {row.map((cell, ci) => (
+                            <td key={ci} style={{
+                              padding: '5px 10px',
+                              borderBottom: '1px solid rgba(99,102,241,0.07)',
+                              color: 'var(--ink-primary, #1e1b4b)',
+                              whiteSpace: 'nowrap', maxWidth: 180,
+                              overflow: 'hidden', textOverflow: 'ellipsis',
+                            }}>{cell ?? '—'}</td>
+                          ))}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
           )}
         </div>
       </div>
