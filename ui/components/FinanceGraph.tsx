@@ -249,7 +249,7 @@ function buildGraph(): { nodes: Node[]; edges: Edge[] } {
     { id: 'ftv-transforms',type:'pipeline',position: { x: COL.xfm,   y: ROW.mid }, data: { label: 'Fivetran Transforms', sublabel: 'No Airflow · runs after sync',    logoKey: 'fivetran',  url: 'https://fivetran.com/dashboard/transformations', status: 'active', tag: 'dbt · managed', category: 'transform', animDelay: 4 } },
     { id: 'dbt-models',   type: 'pipeline', position: { x: COL.xfm,   y: ROW.bot }, data: { label: 'dbt Models',          sublabel: 'finance_transformed · 3 models',  logoKey: 'dbt',       url: 'https://github.com/kennethfoo24/data-to-ai-fivetran/tree/main/dbt_fivetran/models', status: 'active', tag: 'dbt core', category: 'transform', animDelay: 4 } },
     { id: 'snow-transformed',type:'pipeline',position:{x: COL.sclean, y: ROW.mid }, data: { label: 'Snowflake Clean',   sublabel: 'invoice_aging · segments · MRR',  logoKey: 'snowflake', status: 'active', tag: 'transformed', category: 'warehouse', animDelay: 5, clickable: true } },
-    { id: 'ftv-reverse-etl',type:'pipeline',position: { x: COL.retl,  y: ROW.mid }, data: { label: 'Reverse ETL',       sublabel: 'Snowflake → HubSpot',             logoKey: 'fivetran',  url: 'https://fivetran.com/dashboard/transformations', status: 'active', tag: 'reverse etl', category: 'platform', animDelay: 6 } },
+    { id: 'ftv-reverse-etl',type:'pipeline',position: { x: COL.retl,  y: ROW.mid }, data: { label: 'Reverse ETL',       sublabel: 'Snowflake → HubSpot',             logoKey: 'fivetran',  url: 'https://fivetran.com/dashboard/activations', status: 'active', tag: 'reverse etl', category: 'platform', animDelay: 6 } },
     { id: 'hubspot',     type: 'pipeline', position: { x: COL.hub,    y: ROW.mid }, data: { label: 'HubSpot CRM',       sublabel: 'Customer segments',               logoKey: 'hubspot',   url: 'https://app-na2.hubspot.com/contacts/245945263/objects/0-1/views/all/list?prefetch=', status: 'active', tag: 'destination', category: 'crm', animDelay: 7 } },
   ]
 
@@ -268,7 +268,6 @@ function buildGraph(): { nodes: Node[]; edges: Edge[] } {
       e('e4', 'snow-raw',        'ftv-transforms'),
       e('e5', 'ftv-transforms',  'snow-transformed'),
       { id: 'e8', source: 'ftv-transforms', target: 'dbt-models', sourceHandle: 'bottom-out', targetHandle: 'top-in', type: 'silk', markerEnd: { type: MarkerType.ArrowClosed, width: 11, height: 11, color: 'rgba(99,102,241,0.45)' } },
-      { id: 'e9', source: 'dbt-models', target: 'snow-transformed', sourceHandle: 'bottom-out', targetHandle: 'top-in', type: 'silk', markerEnd: { type: MarkerType.ArrowClosed, width: 11, height: 11, color: 'rgba(99,102,241,0.45)' } },
       e('e6', 'snow-transformed','ftv-reverse-etl'),
       e('e7', 'ftv-reverse-etl', 'hubspot'),
     ],
