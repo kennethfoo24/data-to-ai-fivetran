@@ -357,3 +357,11 @@ Sync key: `EMAIL` (unique per contact)
 - **Sync key must be unique**: Use `EMAIL` as the sync key, not `CUSTOMER_SEGMENT` (which is not unique).
 - **No champion data**: `FINANCE_CUSTOMER_SEGMENTS` only contains `at_risk` and `churned` values — do not create a Champions segment.
 - **Vertical edges in same column**: Use `sourceHandle: 'bottom-out'` + `targetHandle: 'top-in'` with bezier edge type for clean vertical drops between stacked nodes.
+
+### Confluent Cloud Kafka connector (2026-04-19)
+- Topic: `shopstream.finance` — finance/payment events (100 events per producer run)
+- Producer: `kafka/produce_finance_events.py` — reads creds from `.env`, uses `confluent-kafka` + SASL/SSL
+- Fivetran connector type: **Confluent** (native, not generic Kafka) — syncs to `FINANCE_EVENTS` table
+- Env vars: `CONFLUENT_BOOTSTRAP_SERVERS`, `CONFLUENT_API_KEY`, `CONFLUENT_API_SECRET`
+- FinanceGraph Kafka node URL updated to Confluent Cloud cluster dashboard
+- Local Docker Kafka (`confluentinc/cp-kafka`) is untouched — still serves `shopstream.clickstream`
