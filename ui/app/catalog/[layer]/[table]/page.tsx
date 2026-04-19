@@ -24,7 +24,7 @@ const LAYER_TABLES: Record<string, string[]> = {
   gold:   ['customer_features', 'product_interactions'],
 }
 
-const GITHUB_BASE = 'https://github.com/kennethfoo24/data-to-ai/blob/main/dbt/models'
+const GITHUB_BASE = 'https://github.com/kennethfoo24/data-to-ai-fivetran/blob/main/dbt/models'
 const DBT_LAYERS = new Set(['silver', 'gold'])
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8001'

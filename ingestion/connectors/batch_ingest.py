@@ -7,8 +7,8 @@ import os
 WAREHOUSE = os.getenv("SPARK_WAREHOUSE", "/warehouse")
 SEED_PATH = os.getenv("SEED_DATA_PATH", "/opt/airflow/seed/data")
 POSTGRES_HOST = os.getenv("POSTGRES_HOST", "postgres")
-POSTGRES_USER = os.getenv("POSTGRES_USER", "postgres")
-POSTGRES_PASSWORD = os.getenv("POSTGRES_PASSWORD", "postgres")
+POSTGRES_USER = os.getenv("POSTGRES_USER", "admin")
+POSTGRES_PASSWORD = os.getenv("POSTGRES_PASSWORD", "admin")
 POSTGRES_DB = os.getenv("POSTGRES_DB", "shopstream")
 
 ICEBERG_JAR = "/opt/airflow/iceberg-spark-runtime.jar"

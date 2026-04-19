@@ -271,7 +271,7 @@ Clicking any Iceberg node (bronze/silver/gold) or dbt node opens a modal showing
 - Iceberg Parquet path pattern: `/warehouse/{layer}/{table}/data/**/*.parquet`
 - Row count is summed from Parquet file metadata (fast, no full scan)
 - SQL sources are statically embedded in `CatalogModal.tsx` (no dbt API needed)
-- GitHub links point to `https://github.com/kennethfoo24/data-to-ai/blob/main/dbt/models/{layer}/{model}.sql`
+- GitHub links point to `https://github.com/kennethfoo24/data-to-ai-fivetran/blob/main/dbt/models/{layer}/{model}.sql`
 - `pyarrow` is already in `serving/requirements.txt` — no new deps needed
 - Rebuild fastapi: `docker compose --profile core build fastapi && docker compose --profile core up -d fastapi`
 - Rebuild UI: `docker compose --profile core build ui && docker compose --profile core up -d ui`
@@ -365,3 +365,30 @@ Sync key: `EMAIL` (unique per contact)
 - Env vars: `CONFLUENT_BOOTSTRAP_SERVERS`, `CONFLUENT_API_KEY`, `CONFLUENT_API_SECRET`
 - FinanceGraph Kafka node URL updated to Confluent Cloud cluster dashboard
 - Local Docker Kafka (`confluentinc/cp-kafka`) is untouched — still serves `shopstream.clickstream`
+
+## Post-Review Fixes (2026-04-20)
+
+Bug fixes identified via full codebase review.
+
+| File | Fix |
+|------|-----|
+| `scripts/setup.sh:85` | Corrected producer path from `seed/produce_finance_events.py` → `kafka/produce_finance_events.py` |
+| `.gitignore` | Added Terraform state/directory exclusions |
+| `scripts/setup.sh`, `variables.tf` | Replaced hardcoded GCP project ID and Snowflake account with `${GCP_PROJECT_ID}` / `${SNOWFLAKE_ACCOUNT}` env vars |
+| `infra/terraform/cloudsql/main.tf` | Cloud SQL admin password now uses `var.admin_password` (set via `TF_VAR_admin_password` / `CLOUDSQL_ADMIN_PASSWORD` in `.env`) |
+| `scripts/setup.sh:132-136` | Cloud SQL COPY commands corrected to `finance."CUSTOMERS"`, `finance."FINANCE_INVOICES"`, `finance."FINANCE_PAYMENTS"` |
+| `ui/components/FinanceGraph.tsx` | Added missing edge `dbt-models → snow-transformed` (lineage was a dead end) |
+| `ingestion/connectors/batch_ingest.py` | Default Postgres credentials changed from `postgres/postgres` → `admin/admin` to match deployment |
+| `serving/routers/catalog.py` | Fixed unreachable NaN check — float NaN now correctly serializes to `null` in JSON |
+| `ui/components/CatalogModal.tsx`, `ui/app/catalog/[layer]/[table]/page.tsx` | Fixed GitHub URL from `data-to-ai` → `data-to-ai-fivetran` |
+
+### Required `.env` / `.env.example` vars added
+```
+GCP_PROJECT_ID=fivetran-493702
+SNOWFLAKE_ACCOUNT=KKGCKAP-CD56063
+CLOUDSQL_ADMIN_PASSWORD=admin
+```
+
+### Key constraints
+- **Two separate Kafka producers**: `seed/produce_finance_events.py` targets local Docker Kafka (`mrr_delta` schema); `kafka/produce_finance_events.py` targets Confluent Cloud (`amount` schema). Never conflate them.
+- **Cloud SQL tables are schema-qualified and quoted**: Always use `finance."CUSTOMERS"` etc. — unqualified names will fail.

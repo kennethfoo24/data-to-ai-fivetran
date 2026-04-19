@@ -268,6 +268,7 @@ function buildGraph(): { nodes: Node[]; edges: Edge[] } {
       e('e4', 'snow-raw',        'ftv-transforms'),
       e('e5', 'ftv-transforms',  'snow-transformed'),
       { id: 'e8', source: 'ftv-transforms', target: 'dbt-models', sourceHandle: 'bottom-out', targetHandle: 'top-in', type: 'silk', markerEnd: { type: MarkerType.ArrowClosed, width: 11, height: 11, color: 'rgba(99,102,241,0.45)' } },
+      { id: 'e9', source: 'dbt-models', target: 'snow-transformed', sourceHandle: 'bottom-out', targetHandle: 'top-in', type: 'silk', markerEnd: { type: MarkerType.ArrowClosed, width: 11, height: 11, color: 'rgba(99,102,241,0.45)' } },
       e('e6', 'snow-transformed','ftv-reverse-etl'),
       e('e7', 'ftv-reverse-etl', 'hubspot'),
     ],

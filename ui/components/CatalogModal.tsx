@@ -141,7 +141,7 @@ LEFT JOIN bronze.clickstream c
 GROUP BY o.customer_id, o.product_id`,
 }
 
-const GITHUB_BASE = 'https://github.com/kennethfoo24/data-to-ai/blob/main/dbt/models'
+const GITHUB_BASE = 'https://github.com/kennethfoo24/data-to-ai-fivetran/blob/main/dbt/models'
 
 const LAYER_TABLES: Record<string, string[]> = {
   bronze: ['customers', 'orders', 'products', 'clickstream'],

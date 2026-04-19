@@ -82,7 +82,7 @@ bash seed/seed.sh
 # 8. Produce Kafka finance events
 echo ""
 echo "→ Producing Kafka finance events..."
-python3 seed/produce_finance_events.py && echo "✓ Finance events published." || echo "  (skipped — Kafka not reachable)"
+python3 kafka/produce_finance_events.py && echo "✓ Finance events published." || echo "  (skipped — Confluent Cloud not configured)"
 
 # 9. Cloud SQL — validate or provision
 echo ""
@@ -99,19 +99,21 @@ elif ! command -v gcloud &> /dev/null; then
 else
   # Check if the instance already exists in GCP
   CLOUDSQL_EXISTS=$(gcloud sql instances list \
-    --project=fivetran-493702 \
+    --project="${GCP_PROJECT_ID}" \
     --filter="name=shopstream-postgres" \
     --format="value(name)" 2>/dev/null || echo "")
 
   if [ -n "$CLOUDSQL_EXISTS" ]; then
     echo "  ✓ Cloud SQL instance shopstream-postgres already exists."
     CLOUDSQL_IP=$(gcloud sql instances describe shopstream-postgres \
-      --project=fivetran-493702 \
+      --project="${GCP_PROJECT_ID}" \
       --format="value(ipAddresses[0].ipAddress)" 2>/dev/null || echo "")
   else
     echo "  → Cloud SQL instance not found — provisioning with Terraform..."
     (
       cd "$TERRAFORM_DIR"
+      export TF_VAR_project_id="${GCP_PROJECT_ID}"
+      export TF_VAR_admin_password="${CLOUDSQL_ADMIN_PASSWORD:-admin}"
       terraform init -input=false -no-color 2>/dev/null
       terraform apply -auto-approve -input=false -no-color
     )
@@ -121,19 +123,19 @@ else
 
   if [ -n "$CLOUDSQL_IP" ]; then
     # Check if tables already have data — skip seed if so
-    ROW_COUNT=$(psql "host=${CLOUDSQL_IP} port=5432 dbname=shopstream user=admin password=admin sslmode=require" \
+    ROW_COUNT=$(psql "host=${CLOUDSQL_IP} port=5432 dbname=shopstream user=admin password=${CLOUDSQL_ADMIN_PASSWORD:-admin} sslmode=require" \
       -tAc "SELECT COUNT(*) FROM customers;" 2>/dev/null || echo "0")
 
     if [ "${ROW_COUNT}" = "0" ] || [ -z "${ROW_COUNT}" ]; then
       echo "  → Seeding Cloud SQL schema and data..."
-      psql "host=${CLOUDSQL_IP} port=5432 dbname=shopstream user=admin password=admin sslmode=require" \
+      psql "host=${CLOUDSQL_IP} port=5432 dbname=shopstream user=admin password=${CLOUDSQL_ADMIN_PASSWORD:-admin} sslmode=require" \
         -f "${TERRAFORM_DIR}/seed.sql" -q
-      psql "host=${CLOUDSQL_IP} port=5432 dbname=shopstream user=admin password=admin sslmode=require" \
-        -c "\COPY customers FROM 'seed/data/customers.csv' CSV HEADER" -q
-      psql "host=${CLOUDSQL_IP} port=5432 dbname=shopstream user=admin password=admin sslmode=require" \
-        -c "\COPY finance_invoices FROM 'seed/data/finance_invoices.csv' CSV HEADER" -q
-      psql "host=${CLOUDSQL_IP} port=5432 dbname=shopstream user=admin password=admin sslmode=require" \
-        -c "\COPY finance_payments FROM 'seed/data/finance_payments.csv' CSV HEADER" -q
+      psql "host=${CLOUDSQL_IP} port=5432 dbname=shopstream user=admin password=${CLOUDSQL_ADMIN_PASSWORD:-admin} sslmode=require" \
+        -c "\COPY finance.\"CUSTOMERS\" FROM 'seed/data/customers.csv' CSV HEADER" -q
+      psql "host=${CLOUDSQL_IP} port=5432 dbname=shopstream user=admin password=${CLOUDSQL_ADMIN_PASSWORD:-admin} sslmode=require" \
+        -c "\COPY finance.\"FINANCE_INVOICES\" FROM 'seed/data/finance_invoices.csv' CSV HEADER" -q
+      psql "host=${CLOUDSQL_IP} port=5432 dbname=shopstream user=admin password=${CLOUDSQL_ADMIN_PASSWORD:-admin} sslmode=require" \
+        -c "\COPY finance.\"FINANCE_PAYMENTS\" FROM 'seed/data/finance_payments.csv' CSV HEADER" -q
       echo "  ✓ Cloud SQL seeded."
     else
       echo "  ✓ Cloud SQL already has data (${ROW_COUNT} customers) — skipping seed."
@@ -161,7 +163,7 @@ else
     echo "║   Protocol:  PLAINTEXT                                               ║"
     echo "║                                                                      ║"
     echo "║   SNOWFLAKE DESTINATION                                              ║"
-    echo "║   Account:   KKGCKAP-CD56063                                         ║"
+    printf "║   Account:   %-55s║\n" "${SNOWFLAKE_ACCOUNT}"
     echo "║   Database:  SHOPSTREAM                                              ║"
     echo "║   Warehouse: COMPUTE_WH                                              ║"
     echo "║   Role:      ACCOUNTADMIN                                            ║"
@@ -174,7 +176,7 @@ else
     echo "║   total_paid   → total_revenue   (custom property)                   ║"
     echo "║                                                                      ║"
     echo "║   Fivetran:  https://fivetran.com/dashboard                          ║"
-    echo "║   Cloud SQL: https://console.cloud.google.com/sql/instances/shopstream-postgres/studio?project=fivetran-493702 ║"
+    printf "║   Cloud SQL: https://console.cloud.google.com/sql/instances/shopstream-postgres/studio?project=%-1s ║\n" "${GCP_PROJECT_ID}"
     echo "╚══════════════════════════════════════════════════════════════════════╝"
   fi
 fi

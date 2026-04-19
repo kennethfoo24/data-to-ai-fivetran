@@ -71,10 +71,12 @@ def catalog_table(layer: str, table: str):
             for col, vals in df.items():
                 v = vals[i]
                 # Convert non-serializable types to string
-                if v is None or isinstance(v, (bool, int, float, str)):
-                    row[col] = v
+                if v is None:
+                    row[col] = None
                 elif isinstance(v, float) and math.isnan(v):
                     row[col] = None
+                elif isinstance(v, (bool, int, float, str)):
+                    row[col] = v
                 else:
                     row[col] = str(v)
             rows.append(row)
