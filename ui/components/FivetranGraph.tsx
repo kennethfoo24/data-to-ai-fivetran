@@ -330,7 +330,7 @@ function buildGraph(): { nodes: Node[]; edges: Edge[] } {
       data: {
         label: 'Snowflake', sublabel: 'Data warehouse',
         logoKey: 'snowflake',
-        url: 'https://app.snowflake.com/kkgckap/cd56063/#/workspaces/ws/USER%24/PUBLIC/DEFAULT%24/Untitled%201.sql',
+        url: 'https://app.snowflake.com/kkgckap/cd56063/#/data/databases/PC_FIVETRAN_DB/schemas/SALESFORCE_MARKETING_DEMO_QUICKSTART_REPORTS/table/SALESFORCE__CONTACT_ENHANCED/data-preview',
         status: 'active', tag: 'destination',
         category: 'destination', animDelay: 5,
       },
