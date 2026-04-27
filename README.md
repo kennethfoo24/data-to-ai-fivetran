@@ -6,6 +6,12 @@ A fully runnable, Docker Compose portfolio project demonstrating modern data eng
 
 ![App Screenshot](https://i.imgur.com/pviU3ZR.png)
 
+![App Screenshot](https://i.imgur.com/LTaihzl.png)
+
+![App Screenshot](https://i.imgur.com/v9ZpWvh.png)
+
+![App Screenshot](https://i.imgur.com/z5NgI3J.png)
+
 
 ### Data-to-AI Architecture Interface
 ![App Screenshot](https://i.imgur.com/QQ3oJuE.png)
