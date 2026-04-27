@@ -4,7 +4,7 @@
 
 A fully runnable, Docker Compose portfolio project demonstrating modern data engineering and machine learning — built around **ShopStream**, a fictional e-commerce platform.
 
-![App Screenshot](https://imgur.com/Uz1kKM0.png)
+![App Screenshot](https://i.imgur.com/pviU3ZR.png)
 
 
 ### Data-to-AI Architecture Interface
