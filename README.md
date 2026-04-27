@@ -1,6 +1,11 @@
+
+
 # DataFabric — End-to-End Data & AI Portfolio
 
 A fully runnable, Docker Compose portfolio project demonstrating modern data engineering and machine learning — built around **ShopStream**, a fictional e-commerce platform.
+
+![App Screenshot](https://imgur.com/Uz1kKM0.png)
+
 
 ### Data-to-AI Architecture Interface
 ![App Screenshot](https://i.imgur.com/QQ3oJuE.png)
